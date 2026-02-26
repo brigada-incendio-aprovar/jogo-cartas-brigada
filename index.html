@@ -1,0 +1,747 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jogo de Cartas da Brigada de Incêndio</title>
+  <style>
+    :root{
+      --bg:#0b1220;
+      --card:#111a2b;
+      --muted:#9bb0c9;
+      --text:#eaf2ff;
+      --accent:#ff7a18;
+      --good:#22c55e;
+      --bad:#ef4444;
+      --border: rgba(255,255,255,.10);
+      --shadow: 0 16px 40px rgba(0,0,0,.40);
+      --radius: 18px;
+    }
+    *{ box-sizing:border-box; }
+    body{
+      margin:0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      background: radial-gradient(900px 600px at 20% -10%, rgba(255,122,24,.25), transparent 60%),
+                  radial-gradient(900px 600px at 120% 20%, rgba(56,189,248,.18), transparent 55%),
+                  var(--bg);
+      color:var(--text);
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:18px;
+    }
+    .app{
+      width:min(980px, 100%);
+      display:grid;
+      gap:14px;
+    }
+    .topbar{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      flex-wrap:wrap;
+    }
+    .brand{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+    }
+    .brand h1{
+      margin:0;
+      font-size:18px;
+      letter-spacing:.2px;
+    }
+    .brand p{
+      margin:0;
+      color:var(--muted);
+      font-size:13px;
+    }
+    .card{
+      background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.03));
+      border:1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding:16px;
+    }
+    .grid{
+      display:grid;
+      grid-template-columns: 1.1fr .9fr;
+      gap:14px;
+    }
+    @media (max-width: 860px){
+      .grid{ grid-template-columns: 1fr; }
+    }
+
+    /* Setup */
+    .setup-row{
+      display:grid;
+      grid-template-columns: 1fr 1fr;
+      gap:10px;
+    }
+    @media (max-width: 520px){
+      .setup-row{ grid-template-columns: 1fr; }
+    }
+    label{
+      display:block;
+      font-size:13px;
+      color:var(--muted);
+      margin-bottom:6px;
+    }
+    input, select{
+      width:100%;
+      background: rgba(0,0,0,.25);
+      border:1px solid var(--border);
+      color:var(--text);
+      border-radius: 12px;
+      padding:12px 12px;
+      font-size:15px;
+      outline:none;
+    }
+    input::placeholder{ color: rgba(234,242,255,.45); }
+
+    .btnrow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      margin-top:12px;
+    }
+    button{
+      border:0;
+      border-radius: 12px;
+      padding:12px 14px;
+      font-weight:600;
+      cursor:pointer;
+      color:var(--text);
+      background: rgba(255,255,255,.08);
+      border: 1px solid var(--border);
+    }
+    button.primary{
+      background: linear-gradient(180deg, rgba(255,122,24,.95), rgba(255,122,24,.75));
+      border: 1px solid rgba(255,122,24,.25);
+      color:#0b1220;
+    }
+    button.good{
+      background: rgba(34,197,94,.18);
+      border:1px solid rgba(34,197,94,.35);
+    }
+    button.bad{
+      background: rgba(239,68,68,.18);
+      border:1px solid rgba(239,68,68,.35);
+    }
+    button:disabled{
+      opacity:.45;
+      cursor:not-allowed;
+    }
+
+    /* Timer */
+    .timerWrap{
+      display:flex;
+      flex-direction:column;
+      gap:12px;
+      align-items:center;
+      justify-content:center;
+      text-align:center;
+      padding:20px 14px;
+    }
+    .phase{
+      font-size:13px;
+      color:var(--muted);
+      letter-spacing:.3px;
+      text-transform:uppercase;
+    }
+    .round{
+      font-size:15px;
+      color:var(--muted);
+      margin-top:-6px;
+    }
+    .timer{
+      font-variant-numeric: tabular-nums;
+      font-size: clamp(54px, 7vw, 84px);
+      font-weight:800;
+      letter-spacing:1px;
+      margin: 6px 0 2px;
+    }
+    .hint{
+      font-size:13px;
+      color:var(--muted);
+    }
+
+    /* Scoreboard */
+    .teams{
+      display:grid;
+      gap:10px;
+    }
+    .team{
+      display:grid;
+      grid-template-columns: 1fr auto;
+      gap:10px;
+      align-items:center;
+      background: rgba(0,0,0,.18);
+      border:1px solid var(--border);
+      border-radius: 14px;
+      padding:12px;
+    }
+    .teamName{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:0;
+    }
+    .teamName strong{
+      font-size:15px;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .teamName span{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .score{
+      display:flex;
+      align-items:center;
+      gap:8px;
+    }
+    .scoreVal{
+      width:56px;
+      text-align:center;
+      font-weight:800;
+      font-size:22px;
+      font-variant-numeric: tabular-nums;
+    }
+    .mini{
+      padding:8px 10px;
+      border-radius: 10px;
+      font-weight:800;
+      line-height:1;
+    }
+    .footerRow{
+      display:flex;
+      gap:10px;
+      flex-wrap:wrap;
+      justify-content:space-between;
+      align-items:center;
+      margin-top:12px;
+    }
+    .statusBox{
+      color:var(--muted);
+      font-size:13px;
+    }
+    .winner{
+      margin-top:10px;
+      padding:12px;
+      border-radius: 14px;
+      border: 1px solid rgba(34,197,94,.35);
+      background: rgba(34,197,94,.12);
+      display:none;
+    }
+    .winner strong{ color: var(--good); }
+    .warn{
+      margin-top:10px;
+      padding:12px;
+      border-radius: 14px;
+      border: 1px solid rgba(255,122,24,.35);
+      background: rgba(255,122,24,.12);
+      display:none;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <h1>Jogo de Cartas da Brigada de Incêndio</h1>
+        <p>Painel de cronômetro + placar (2 a 4 equipes)</p>
+      </div>
+      <div class="statusBox" id="smallStatus">Configuração</div>
+    </div>
+
+    <!-- SETUP -->
+    <div class="card" id="setupCard">
+      <div class="setup-row">
+        <div>
+          <label for="roundSeconds">Tempo por rodada (segundos)</label>
+          <input id="roundSeconds" type="number" min="1" step="1" value="15" />
+          <div class="hint">Sugestão: 10, 15 ou 20. Você pode digitar qualquer valor.</div>
+        </div>
+        <div>
+          <label for="teamCount">Quantidade de equipes</label>
+          <select id="teamCount">
+            <option value="2">2 equipes</option>
+            <option value="3">3 equipes</option>
+            <option value="4" selected>4 equipes</option>
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-top:14px" class="setup-row">
+        <div>
+          <label>Equipe 1</label>
+          <input id="t1" placeholder="Ex: Alpha" />
+        </div>
+        <div>
+          <label>Equipe 2</label>
+          <input id="t2" placeholder="Ex: Bravo" />
+        </div>
+        <div>
+          <label>Equipe 3</label>
+          <input id="t3" placeholder="Ex: Charlie" />
+        </div>
+        <div>
+          <label>Equipe 4</label>
+          <input id="t4" placeholder="Ex: Delta" />
+        </div>
+      </div>
+
+      <div class="btnrow">
+        <button class="primary" id="startGame">Iniciar</button>
+        <button id="loadDemo">Preencher exemplo</button>
+        <button class="bad" id="resetAll">Zerar tudo</button>
+      </div>
+
+      <div class="warn" id="setupWarn"></div>
+    </div>
+
+    <!-- GAME -->
+    <div class="grid" id="gameGrid" style="display:none;">
+      <div class="card timerWrap">
+        <div class="phase" id="phaseText">Rodada Normal</div>
+        <div class="round" id="roundText">Rodada 1 de 15</div>
+
+        <div class="timer" id="timerText">00:15</div>
+
+        <div class="btnrow" style="justify-content:center;">
+          <button class="primary" id="btnStartPause">Iniciar</button>
+          <button id="btnResetTimer">Reiniciar tempo</button>
+          <button class="good" id="btnNextRound">Próxima rodada</button>
+        </div>
+
+        <div class="hint" id="timerHint">
+          Você controla o tempo: clique em <b>Iniciar</b> no começo da rodada.
+        </div>
+
+        <div class="winner" id="winnerBox"></div>
+      </div>
+
+      <div class="card">
+        <div style="display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:800; font-size:16px;">Placar</div>
+            <div class="hint">Use <b>+1</b> quando a equipe acertar.</div>
+          </div>
+          <div class="btnrow" style="margin:0;">
+            <button class="bad" id="btnUndoRound">Voltar rodada</button>
+            <button class="bad" id="btnRestart">Reiniciar jogo</button>
+          </div>
+        </div>
+
+        <div class="teams" id="teamsWrap" style="margin-top:12px;"></div>
+
+        <div class="footerRow">
+          <div class="statusBox" id="tieStatus"></div>
+          <div class="statusBox" id="leaderStatus"></div>
+        </div>
+
+        <div class="hint" style="margin-top:10px;">
+          Obs.: se terminar empatado em 1º após a 15ª rodada, entram 5 rodadas de desempate.
+          Se ainda empatar, vira <b>morte súbita</b> até existir 1 vencedor.
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(() => {
+  // ---------- State ----------
+  const state = {
+    inGame: false,
+    durationSec: 15,
+    teams: [], // {name, score}
+    // rounds:
+    normalRounds: 15,
+    tiebreakMax: 5,         // "mais 5 rodadas"
+    roundIndex: 1,          // 1-based within current phase
+    phase: "setup",         // setup | normal | tiebreak | sudden
+    history: [],            // snapshots for undo
+    // timer:
+    remaining: 15,
+    timerId: null,
+    running: false,
+  };
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const pad2 = (n) => String(n).padStart(2, "0");
+  const fmtTime = (sec) => {
+    sec = Math.max(0, Math.floor(sec));
+    const m = Math.floor(sec / 60);
+    const s = sec % 60;
+    return `${pad2(m)}:${pad2(s)}`;
+  };
+
+  function topLeaders() {
+    const max = Math.max(...state.teams.map(t => t.score));
+    const leaders = state.teams
+      .map((t, idx) => ({...t, idx}))
+      .filter(t => t.score === max);
+    return { max, leaders };
+  }
+
+  function uniqueWinnerExists() {
+    const { leaders } = topLeaders();
+    return leaders.length === 1;
+  }
+
+  function saveHistory() {
+    state.history.push(JSON.parse(JSON.stringify({
+      teams: state.teams,
+      roundIndex: state.roundIndex,
+      phase: state.phase,
+      remaining: state.remaining,
+      running: state.running
+    })));
+    // limita histórico
+    if (state.history.length > 50) state.history.shift();
+  }
+
+  function restoreFromHistory() {
+    const snap = state.history.pop();
+    if (!snap) return;
+    state.teams = snap.teams;
+    state.roundIndex = snap.roundIndex;
+    state.phase = snap.phase;
+    state.remaining = snap.remaining;
+    state.running = false;
+    stopTimer();
+    renderGame();
+  }
+
+  // ---------- Timer ----------
+  function stopTimer() {
+    if (state.timerId) clearInterval(state.timerId);
+    state.timerId = null;
+    state.running = false;
+    $("btnStartPause").textContent = "Iniciar";
+  }
+
+  function startTimer() {
+    if (state.running) return;
+    state.running = true;
+    $("btnStartPause").textContent = "Pausar";
+    state.timerId = setInterval(() => {
+      state.remaining -= 1;
+      if (state.remaining <= 0) {
+        state.remaining = 0;
+        stopTimer();
+        // vibração leve em celulares (se suportado)
+        if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+      }
+      renderTimerOnly();
+    }, 1000);
+  }
+
+  function toggleTimer() {
+    if (state.running) stopTimer();
+    else startTimer();
+  }
+
+  function resetTimer() {
+    stopTimer();
+    state.remaining = state.durationSec;
+    renderTimerOnly();
+  }
+
+  // ---------- Game flow ----------
+  function currentPhaseLabel() {
+    if (state.phase === "normal") return "Rodada Normal";
+    if (state.phase === "tiebreak") return "Desempate (até 5 rodadas)";
+    if (state.phase === "sudden") return "Morte súbita (até ter 1 vencedor)";
+    return "Configuração";
+  }
+
+  function roundText() {
+    if (state.phase === "normal") return `Rodada ${state.roundIndex} de ${state.normalRounds}`;
+    if (state.phase === "tiebreak") return `Desempate ${state.roundIndex} de ${state.tiebreakMax}`;
+    if (state.phase === "sudden") return `Morte súbita ${state.roundIndex}`;
+    return "";
+  }
+
+  function checkEndConditionsAndMaybeFinish() {
+    // chamado quando avança rodada, ou mexe pontuação, etc.
+    $("winnerBox").style.display = "none";
+    $("winnerBox").innerHTML = "";
+
+    // Fim das rodadas normais
+    if (state.phase === "normal" && state.roundIndex > state.normalRounds) {
+      const { leaders } = topLeaders();
+      if (leaders.length === 1) {
+        finishGame(leaders[0]);
+      } else {
+        // entra desempate
+        state.phase = "tiebreak";
+        state.roundIndex = 1;
+        resetTimer();
+      }
+    }
+
+    // Desempate (até 5)
+    if (state.phase === "tiebreak" && state.roundIndex > state.tiebreakMax) {
+      if (uniqueWinnerExists()) {
+        const { leaders } = topLeaders();
+        finishGame(leaders[0]);
+      } else {
+        // ainda empatou -> morte súbita até resolver
+        state.phase = "sudden";
+        state.roundIndex = 1;
+        resetTimer();
+      }
+    }
+
+    // Morte súbita: termina assim que houver líder único
+    if (state.phase === "sudden") {
+      if (uniqueWinnerExists()) {
+        const { leaders } = topLeaders();
+        finishGame(leaders[0]);
+      }
+    }
+
+    renderGame();
+  }
+
+  function finishGame(winner) {
+    stopTimer();
+    const box = $("winnerBox");
+    box.style.display = "block";
+    box.innerHTML = `
+      <div style="font-size:14px; color: var(--muted); margin-bottom:6px;">Resultado</div>
+      <div style="font-size:18px; font-weight:900;">
+        🏆 Vencedor: <strong>${escapeHtml(winner.name)}</strong> (${winner.score} ponto(s))
+      </div>
+      <div class="hint" style="margin-top:8px;">Se quiser continuar jogando, clique em “Reiniciar jogo”.</div>
+    `;
+    $("btnNextRound").disabled = true;
+    $("btnStartPause").disabled = true;
+    $("btnResetTimer").disabled = true;
+  }
+
+  function nextRound() {
+    // avança rodada e reseta tempo (você inicia de novo manualmente)
+    if ($("btnNextRound").disabled) return;
+    saveHistory();
+    stopTimer();
+    state.remaining = state.durationSec;
+    state.roundIndex += 1;
+    checkEndConditionsAndMaybeFinish();
+  }
+
+  function changeScore(idx, delta) {
+    saveHistory();
+    state.teams[idx].score = Math.max(0, state.teams[idx].score + delta);
+    renderGame();
+    // em morte súbita, pode acabar imediatamente quando alguém dispara
+    if (state.phase === "sudden") checkEndConditionsAndMaybeFinish();
+  }
+
+  function escapeHtml(s){
+    return String(s)
+      .replaceAll("&","&amp;")
+      .replaceAll("<","&lt;")
+      .replaceAll(">","&gt;")
+      .replaceAll('"',"&quot;")
+      .replaceAll("'","&#039;");
+  }
+
+  // ---------- Render ----------
+  function renderTimerOnly() {
+    $("timerText").textContent = fmtTime(state.remaining);
+  }
+
+  function renderTeams() {
+    const wrap = $("teamsWrap");
+    wrap.innerHTML = "";
+
+    const { max, leaders } = topLeaders();
+    const leaderNames = leaders.map(l => l.name);
+
+    state.teams.forEach((t, idx) => {
+      const isLeader = t.score === max && leaders.length >= 1;
+      const teamEl = document.createElement("div");
+      teamEl.className = "team";
+      teamEl.innerHTML = `
+        <div class="teamName">
+          <strong>${escapeHtml(t.name)}</strong>
+          <span>${isLeader ? "🔥 líder" : " "}</span>
+        </div>
+        <div class="score">
+          <button class="mini bad" data-act="minus" aria-label="Diminuir">-</button>
+          <div class="scoreVal">${t.score}</div>
+          <button class="mini good" data-act="plus" aria-label="Adicionar">+1</button>
+        </div>
+      `;
+      teamEl.querySelector('[data-act="minus"]').onclick = () => changeScore(idx, -1);
+      teamEl.querySelector('[data-act="plus"]').onclick  = () => changeScore(idx, +1);
+      wrap.appendChild(teamEl);
+    });
+
+    // status
+    if (state.phase === "normal") {
+      $("tieStatus").textContent = "";
+    } else if (state.phase === "tiebreak") {
+      $("tieStatus").textContent = "Modo desempate ativo.";
+    } else if (state.phase === "sudden") {
+      $("tieStatus").textContent = "Morte súbita: o jogo termina quando houver 1 líder único.";
+    }
+
+    if (leaders.length === 1) {
+      $("leaderStatus").textContent = `Líder: ${leaderNames[0]} (${max})`;
+    } else {
+      $("leaderStatus").textContent = `Empate na liderança: ${leaderNames.join(", ")} (${max})`;
+    }
+  }
+
+  function renderGame() {
+    $("smallStatus").textContent = currentPhaseLabel();
+    $("phaseText").textContent = currentPhaseLabel();
+    $("roundText").textContent = roundText();
+    renderTimerOnly();
+    renderTeams();
+
+    // habilita/desabilita botões dependendo se terminou
+    const finished = $("btnNextRound").disabled;
+    if (!finished) {
+      $("btnStartPause").disabled = false;
+      $("btnResetTimer").disabled = false;
+      $("btnNextRound").disabled = false;
+    }
+  }
+
+  // ---------- Setup ----------
+  function validateAndStart() {
+    const warn = $("setupWarn");
+    warn.style.display = "none";
+    warn.textContent = "";
+
+    const duration = Number($("roundSeconds").value);
+    if (!Number.isFinite(duration) || duration <= 0) {
+      warn.style.display = "block";
+      warn.textContent = "Informe um tempo válido (em segundos).";
+      return;
+    }
+
+    const count = Number($("teamCount").value);
+    const names = [
+      $("t1").value.trim(),
+      $("t2").value.trim(),
+      $("t3").value.trim(),
+      $("t4").value.trim(),
+    ];
+
+    const selected = names.slice(0, count).map((n, i) => n || `Equipe ${i+1}`);
+    // evita nomes repetidos (só pra não confundir)
+    const lower = selected.map(s => s.toLowerCase());
+    const hasDup = new Set(lower).size !== lower.length;
+    if (hasDup) {
+      warn.style.display = "block";
+      warn.textContent = "Evite nomes repetidos entre as equipes (pra não confundir no placar).";
+      return;
+    }
+
+    // init state
+    state.inGame = true;
+    state.durationSec = Math.floor(duration);
+    state.remaining = state.durationSec;
+    state.teams = selected.map(n => ({ name: n, score: 0 }));
+    state.roundIndex = 1;
+    state.phase = "normal";
+    state.history = [];
+    stopTimer();
+
+    // show game
+    $("setupCard").style.display = "none";
+    $("gameGrid").style.display = "grid";
+    $("btnNextRound").disabled = false;
+    $("btnStartPause").disabled = false;
+    $("btnResetTimer").disabled = false;
+
+    renderGame();
+  }
+
+  function fillDemo() {
+    $("roundSeconds").value = 15;
+    $("teamCount").value = 4;
+    $("t1").value = "Alpha";
+    $("t2").value = "Bravo";
+    $("t3").value = "Charlie";
+    $("t4").value = "Delta";
+  }
+
+  function resetAll() {
+    stopTimer();
+    // reset inputs
+    $("roundSeconds").value = 15;
+    $("teamCount").value = 4;
+    ["t1","t2","t3","t4"].forEach(id => $(id).value = "");
+    $("setupWarn").style.display = "none";
+
+    // reset state
+    Object.assign(state, {
+      inGame:false,
+      durationSec:15,
+      teams:[],
+      roundIndex:1,
+      phase:"setup",
+      history:[],
+      remaining:15,
+      timerId:null,
+      running:false
+    });
+
+    // show setup
+    $("setupCard").style.display = "block";
+    $("gameGrid").style.display = "none";
+    $("smallStatus").textContent = "Configuração";
+  }
+
+  function restartGameKeepingTeams() {
+    stopTimer();
+    state.teams.forEach(t => t.score = 0);
+    state.phase = "normal";
+    state.roundIndex = 1;
+    state.remaining = state.durationSec;
+    state.history = [];
+    $("winnerBox").style.display = "none";
+    $("btnNextRound").disabled = false;
+    $("btnStartPause").disabled = false;
+    $("btnResetTimer").disabled = false;
+    renderGame();
+  }
+
+  // ---------- Events ----------
+  $("startGame").onclick = validateAndStart;
+  $("loadDemo").onclick = fillDemo;
+  $("resetAll").onclick = resetAll;
+
+  $("btnStartPause").onclick = () => toggleTimer();
+  $("btnResetTimer").onclick = () => { saveHistory(); resetTimer(); };
+  $("btnNextRound").onclick = () => nextRound();
+  $("btnUndoRound").onclick = () => restoreFromHistory();
+  $("btnRestart").onclick = () => restartGameKeepingTeams();
+
+  // ajusta campos de equipe conforme quantidade
+  $("teamCount").addEventListener("change", () => {
+    const c = Number($("teamCount").value);
+    const inputs = [$("t1"),$("t2"),$("t3"),$("t4")];
+    inputs.forEach((inp, i) => {
+      inp.disabled = i >= c;
+      inp.style.opacity = i >= c ? .55 : 1;
+      if (i >= c) inp.value = "";
+    });
+  });
+  $("teamCount").dispatchEvent(new Event("change"));
+
+})();
+</script>
+</body>
+</html>
