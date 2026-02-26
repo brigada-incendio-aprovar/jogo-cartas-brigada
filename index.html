@@ -4,6 +4,10 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Jogo de Cartas da Brigada de Incêndio</title>
+
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#0b1220">
+
   <style>
     :root{
       --bg:#0b1220;
@@ -246,22 +250,24 @@
       background: rgba(255,122,24,.12);
       display:none;
     }
+
     .cornerLogo{
-  position: fixed;
-  top: 14px;
-  left: 14px;           /* se quiser no canto direito: troque por right:14px e apague left */
-  width: 56px;
-  height: 56px;
-  object-fit: contain;
-  border-radius: 12px;
-  background: rgba(0,0,0,.25);
-  border: 1px solid rgba(255,255,255,.10);
-  padding: 8px;
-  box-shadow: 0 12px 35px rgba(0,0,0,.35);
-  z-index: 9999;
-}
+      position: fixed;
+      top: 14px;
+      left: 14px; /* se quiser no canto direito: troque por right:14px e apague left */
+      width: 56px;
+      height: 56px;
+      object-fit: contain;
+      border-radius: 12px;
+      background: rgba(0,0,0,.25);
+      border: 1px solid rgba(255,255,255,.10);
+      padding: 8px;
+      box-shadow: 0 12px 35px rgba(0,0,0,.35);
+      z-index: 9999;
+    }
   </style>
 </head>
+
 <body>
   <div class="app">
     <div class="topbar">
@@ -368,431 +374,411 @@
     </div>
   </div>
 
-<script>
-(() => {
-  // ---------- State ----------
-  const state = {
-    inGame: false,
-    durationSec: 15,
-    teams: [], // {name, score}
-    // rounds:
-    normalRounds: 15,
-    tiebreakMax: 5,         // "mais 5 rodadas"
-    roundIndex: 1,          // 1-based within current phase
-    phase: "setup",         // setup | normal | tiebreak | sudden
-    history: [],            // snapshots for undo
-    // timer:
-    remaining: 15,
-    timerId: null,
-    running: false,
-  };
+  <script>
+  (() => {
+    // ---------- State ----------
+    const state = {
+      inGame: false,
+      durationSec: 15,
+      teams: [], // {name, score}
+      // rounds:
+      normalRounds: 15,
+      tiebreakMax: 5,         // "mais 5 rodadas"
+      roundIndex: 1,          // 1-based within current phase
+      phase: "setup",         // setup | normal | tiebreak | sudden
+      history: [],            // snapshots for undo
+      // timer:
+      remaining: 15,
+      timerId: null,
+      running: false,
+    };
 
-  // ---------- Helpers ----------
-  const $ = (id) => document.getElementById(id);
-  const pad2 = (n) => String(n).padStart(2, "0");
-  const fmtTime = (sec) => {
-    sec = Math.max(0, Math.floor(sec));
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${pad2(m)}:${pad2(s)}`;
-  };
+    // ---------- Helpers ----------
+    const $ = (id) => document.getElementById(id);
+    const pad2 = (n) => String(n).padStart(2, "0");
+    const fmtTime = (sec) => {
+      sec = Math.max(0, Math.floor(sec));
+      const m = Math.floor(sec / 60);
+      const s = sec % 60;
+      return `${pad2(m)}:${pad2(s)}`;
+    };
 
-  function topLeaders() {
-    const max = Math.max(...state.teams.map(t => t.score));
-    const leaders = state.teams
-      .map((t, idx) => ({...t, idx}))
-      .filter(t => t.score === max);
-    return { max, leaders };
-  }
+    function topLeaders() {
+      const max = Math.max(...state.teams.map(t => t.score));
+      const leaders = state.teams
+        .map((t, idx) => ({...t, idx}))
+        .filter(t => t.score === max);
+      return { max, leaders };
+    }
 
-  function uniqueWinnerExists() {
-    const { leaders } = topLeaders();
-    return leaders.length === 1;
-  }
-
-  function saveHistory() {
-    state.history.push(JSON.parse(JSON.stringify({
-      teams: state.teams,
-      roundIndex: state.roundIndex,
-      phase: state.phase,
-      remaining: state.remaining,
-      running: state.running
-    })));
-    // limita histórico
-    if (state.history.length > 50) state.history.shift();
-  }
-
-  function restoreFromHistory() {
-    const snap = state.history.pop();
-    if (!snap) return;
-    state.teams = snap.teams;
-    state.roundIndex = snap.roundIndex;
-    state.phase = snap.phase;
-    state.remaining = snap.remaining;
-    state.running = false;
-    stopTimer();
-    renderGame();
-  }
-
-  // ---------- Timer ----------
-  function stopTimer() {
-    if (state.timerId) clearInterval(state.timerId);
-    state.timerId = null;
-    state.running = false;
-    $("btnStartPause").textContent = "Iniciar";
-  }
-
-  function startTimer() {
-    if (state.running) return;
-    state.running = true;
-    $("btnStartPause").textContent = "Pausar";
-    state.timerId = setInterval(() => {
-      state.remaining -= 1;
-      if (state.remaining <= 0) {
-        state.remaining = 0;
-        stopTimer();
-        // vibração leve em celulares (se suportado)
-        if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
-      }
-      renderTimerOnly();
-    }, 1000);
-  }
-
-  function toggleTimer() {
-    if (state.running) stopTimer();
-    else startTimer();
-  }
-
-  function resetTimer() {
-    stopTimer();
-    state.remaining = state.durationSec;
-    renderTimerOnly();
-  }
-
-  // ---------- Game flow ----------
-  function currentPhaseLabel() {
-    if (state.phase === "normal") return "Rodada Normal";
-    if (state.phase === "tiebreak") return "Desempate (até 5 rodadas)";
-    if (state.phase === "sudden") return "Morte súbita (até ter 1 vencedor)";
-    return "Configuração";
-  }
-
-  function roundText() {
-    if (state.phase === "normal") return `Rodada ${state.roundIndex} de ${state.normalRounds}`;
-    if (state.phase === "tiebreak") return `Desempate ${state.roundIndex} de ${state.tiebreakMax}`;
-    if (state.phase === "sudden") return `Morte súbita ${state.roundIndex}`;
-    return "";
-  }
-
-  function checkEndConditionsAndMaybeFinish() {
-    // chamado quando avança rodada, ou mexe pontuação, etc.
-    $("winnerBox").style.display = "none";
-    $("winnerBox").innerHTML = "";
-
-    // Fim das rodadas normais
-    if (state.phase === "normal" && state.roundIndex > state.normalRounds) {
+    function uniqueWinnerExists() {
       const { leaders } = topLeaders();
-      if (leaders.length === 1) {
-        finishGame(leaders[0]);
-      } else {
-        // entra desempate
-        state.phase = "tiebreak";
-        state.roundIndex = 1;
-        resetTimer();
-      }
+      return leaders.length === 1;
     }
 
-    // Desempate (até 5)
-    if (state.phase === "tiebreak" && state.roundIndex > state.tiebreakMax) {
-      if (uniqueWinnerExists()) {
+    function saveHistory() {
+      state.history.push(JSON.parse(JSON.stringify({
+        teams: state.teams,
+        roundIndex: state.roundIndex,
+        phase: state.phase,
+        remaining: state.remaining,
+        running: state.running
+      })));
+      if (state.history.length > 50) state.history.shift();
+    }
+
+    function restoreFromHistory() {
+      const snap = state.history.pop();
+      if (!snap) return;
+      state.teams = snap.teams;
+      state.roundIndex = snap.roundIndex;
+      state.phase = snap.phase;
+      state.remaining = snap.remaining;
+      state.running = false;
+      stopTimer();
+      renderGame();
+    }
+
+    // ---------- Timer ----------
+    function stopTimer() {
+      if (state.timerId) clearInterval(state.timerId);
+      state.timerId = null;
+      state.running = false;
+      $("btnStartPause").textContent = "Iniciar";
+    }
+
+    function startTimer() {
+      if (state.running) return;
+      state.running = true;
+      $("btnStartPause").textContent = "Pausar";
+      state.timerId = setInterval(() => {
+        state.remaining -= 1;
+        if (state.remaining <= 0) {
+          state.remaining = 0;
+          stopTimer();
+          if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+        }
+        renderTimerOnly();
+      }, 1000);
+    }
+
+    function toggleTimer() {
+      if (state.running) stopTimer();
+      else startTimer();
+    }
+
+    function resetTimer() {
+      stopTimer();
+      state.remaining = state.durationSec;
+      renderTimerOnly();
+    }
+
+    // ---------- Game flow ----------
+    function currentPhaseLabel() {
+      if (state.phase === "normal") return "Rodada Normal";
+      if (state.phase === "tiebreak") return "Desempate (até 5 rodadas)";
+      if (state.phase === "sudden") return "Morte súbita (até ter 1 vencedor)";
+      return "Configuração";
+    }
+
+    function roundText() {
+      if (state.phase === "normal") return `Rodada ${state.roundIndex} de ${state.normalRounds}`;
+      if (state.phase === "tiebreak") return `Desempate ${state.roundIndex} de ${state.tiebreakMax}`;
+      if (state.phase === "sudden") return `Morte súbita ${state.roundIndex}`;
+      return "";
+    }
+
+    function checkEndConditionsAndMaybeFinish() {
+      $("winnerBox").style.display = "none";
+      $("winnerBox").innerHTML = "";
+
+      if (state.phase === "normal" && state.roundIndex > state.normalRounds) {
         const { leaders } = topLeaders();
-        finishGame(leaders[0]);
-      } else {
-        // ainda empatou -> morte súbita até resolver
-        state.phase = "sudden";
-        state.roundIndex = 1;
-        resetTimer();
+        if (leaders.length === 1) finishGame(leaders[0]);
+        else {
+          state.phase = "tiebreak";
+          state.roundIndex = 1;
+          resetTimer();
+        }
       }
+
+      if (state.phase === "tiebreak" && state.roundIndex > state.tiebreakMax) {
+        if (uniqueWinnerExists()) {
+          const { leaders } = topLeaders();
+          finishGame(leaders[0]);
+        } else {
+          state.phase = "sudden";
+          state.roundIndex = 1;
+          resetTimer();
+        }
+      }
+
+      if (state.phase === "sudden") {
+        if (uniqueWinnerExists()) {
+          const { leaders } = topLeaders();
+          finishGame(leaders[0]);
+        }
+      }
+
+      renderGame();
     }
 
-    // Morte súbita: termina assim que houver líder único
-    if (state.phase === "sudden") {
-      if (uniqueWinnerExists()) {
-        const { leaders } = topLeaders();
-        finishGame(leaders[0]);
-      }
-    }
-
-    renderGame();
-  }
-
-  function finishGame(winner) {
-    stopTimer();
-    const box = $("winnerBox");
-    box.style.display = "block";
-    box.innerHTML = `
-      <div style="font-size:14px; color: var(--muted); margin-bottom:6px;">Resultado</div>
-      <div style="font-size:18px; font-weight:900;">
-        🏆 Vencedor: <strong>${escapeHtml(winner.name)}</strong> (${winner.score} ponto(s))
-      </div>
-      <div class="hint" style="margin-top:8px;">Se quiser continuar jogando, clique em “Reiniciar jogo”.</div>
-    `;
-    $("btnNextRound").disabled = true;
-    $("btnStartPause").disabled = true;
-    $("btnResetTimer").disabled = true;
-  }
-
-  function nextRound() {
-    // avança rodada e reseta tempo (você inicia de novo manualmente)
-    if ($("btnNextRound").disabled) return;
-    saveHistory();
-    stopTimer();
-    state.remaining = state.durationSec;
-    state.roundIndex += 1;
-    checkEndConditionsAndMaybeFinish();
-  }
-
-  function changeScore(idx, delta) {
-    saveHistory();
-    state.teams[idx].score = Math.max(0, state.teams[idx].score + delta);
-    renderGame();
-    // em morte súbita, pode acabar imediatamente quando alguém dispara
-    if (state.phase === "sudden") checkEndConditionsAndMaybeFinish();
-  }
-
-  function escapeHtml(s){
-    return String(s)
-      .replaceAll("&","&amp;")
-      .replaceAll("<","&lt;")
-      .replaceAll(">","&gt;")
-      .replaceAll('"',"&quot;")
-      .replaceAll("'","&#039;");
-  }
-
-  // ---------- Render ----------
-  function renderTimerOnly() {
-    $("timerText").textContent = fmtTime(state.remaining);
-  }
-
-  function renderTeams() {
-    const wrap = $("teamsWrap");
-    wrap.innerHTML = "";
-
-    const { max, leaders } = topLeaders();
-    const leaderNames = leaders.map(l => l.name);
-
-    state.teams.forEach((t, idx) => {
-      const isLeader = t.score === max && leaders.length >= 1;
-      const teamEl = document.createElement("div");
-      teamEl.className = "team";
-      teamEl.innerHTML = `
-        <div class="teamName">
-          <strong>${escapeHtml(t.name)}</strong>
-          <span>${isLeader ? "🔥 líder" : " "}</span>
+    function finishGame(winner) {
+      stopTimer();
+      const box = $("winnerBox");
+      box.style.display = "block";
+      box.innerHTML = `
+        <div style="font-size:14px; color: var(--muted); margin-bottom:6px;">Resultado</div>
+        <div style="font-size:18px; font-weight:900;">
+          🏆 Vencedor: <strong>${escapeHtml(winner.name)}</strong> (${winner.score} ponto(s))
         </div>
-        <div class="score">
-          <button class="mini bad" data-act="minus" aria-label="Diminuir">-</button>
-          <div class="scoreVal">${t.score}</div>
-          <button class="mini good" data-act="plus" aria-label="Adicionar">+1</button>
-        </div>
+        <div class="hint" style="margin-top:8px;">Se quiser continuar jogando, clique em “Reiniciar jogo”.</div>
       `;
-      teamEl.querySelector('[data-act="minus"]').onclick = () => changeScore(idx, -1);
-      teamEl.querySelector('[data-act="plus"]').onclick  = () => changeScore(idx, +1);
-      wrap.appendChild(teamEl);
-    });
-
-    // status
-    if (state.phase === "normal") {
-      $("tieStatus").textContent = "";
-    } else if (state.phase === "tiebreak") {
-      $("tieStatus").textContent = "Modo desempate ativo.";
-    } else if (state.phase === "sudden") {
-      $("tieStatus").textContent = "Morte súbita: o jogo termina quando houver 1 líder único.";
+      $("btnNextRound").disabled = true;
+      $("btnStartPause").disabled = true;
+      $("btnResetTimer").disabled = true;
     }
 
-    if (leaders.length === 1) {
-      $("leaderStatus").textContent = `Líder: ${leaderNames[0]} (${max})`;
-    } else {
-      $("leaderStatus").textContent = `Empate na liderança: ${leaderNames.join(", ")} (${max})`;
+    function nextRound() {
+      if ($("btnNextRound").disabled) return;
+      saveHistory();
+      stopTimer();
+      state.remaining = state.durationSec;
+      state.roundIndex += 1;
+      checkEndConditionsAndMaybeFinish();
     }
-  }
 
-  function renderGame() {
-    $("smallStatus").textContent = currentPhaseLabel();
-    $("phaseText").textContent = currentPhaseLabel();
-    $("roundText").textContent = roundText();
-    renderTimerOnly();
-    renderTeams();
+    function changeScore(idx, delta) {
+      saveHistory();
+      state.teams[idx].score = Math.max(0, state.teams[idx].score + delta);
+      renderGame();
+      if (state.phase === "sudden") checkEndConditionsAndMaybeFinish();
+    }
 
-    // habilita/desabilita botões dependendo se terminou
-    const finished = $("btnNextRound").disabled;
-    if (!finished) {
+    function escapeHtml(s){
+      return String(s)
+        .replaceAll("&","&amp;")
+        .replaceAll("<","&lt;")
+        .replaceAll(">","&gt;")
+        .replaceAll('"',"&quot;")
+        .replaceAll("'","&#039;");
+    }
+
+    // ---------- Render ----------
+    function renderTimerOnly() {
+      $("timerText").textContent = fmtTime(state.remaining);
+    }
+
+    function renderTeams() {
+      const wrap = $("teamsWrap");
+      wrap.innerHTML = "";
+
+      const { max, leaders } = topLeaders();
+      const leaderNames = leaders.map(l => l.name);
+
+      state.teams.forEach((t, idx) => {
+        const isLeader = t.score === max && leaders.length >= 1;
+        const teamEl = document.createElement("div");
+        teamEl.className = "team";
+        teamEl.innerHTML = `
+          <div class="teamName">
+            <strong>${escapeHtml(t.name)}</strong>
+            <span>${isLeader ? "🔥 líder" : " "}</span>
+          </div>
+          <div class="score">
+            <button class="mini bad" data-act="minus" aria-label="Diminuir">-</button>
+            <div class="scoreVal">${t.score}</div>
+            <button class="mini good" data-act="plus" aria-label="Adicionar">+1</button>
+          </div>
+        `;
+        teamEl.querySelector('[data-act="minus"]').onclick = () => changeScore(idx, -1);
+        teamEl.querySelector('[data-act="plus"]').onclick  = () => changeScore(idx, +1);
+        wrap.appendChild(teamEl);
+      });
+
+      if (state.phase === "normal") $("tieStatus").textContent = "";
+      else if (state.phase === "tiebreak") $("tieStatus").textContent = "Modo desempate ativo.";
+      else if (state.phase === "sudden") $("tieStatus").textContent = "Morte súbita: o jogo termina quando houver 1 líder único.";
+
+      if (leaders.length === 1) $("leaderStatus").textContent = `Líder: ${leaderNames[0]} (${max})`;
+      else $("leaderStatus").textContent = `Empate na liderança: ${leaderNames.join(", ")} (${max})`;
+    }
+
+    function renderGame() {
+      $("smallStatus").textContent = currentPhaseLabel();
+      $("phaseText").textContent = currentPhaseLabel();
+      $("roundText").textContent = roundText();
+      renderTimerOnly();
+      renderTeams();
+
+      const finished = $("btnNextRound").disabled;
+      if (!finished) {
+        $("btnStartPause").disabled = false;
+        $("btnResetTimer").disabled = false;
+        $("btnNextRound").disabled = false;
+      }
+    }
+
+    // ---------- Setup ----------
+    function validateAndStart() {
+      const warn = $("setupWarn");
+      warn.style.display = "none";
+      warn.textContent = "";
+
+      const duration = Number($("roundSeconds").value);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        warn.style.display = "block";
+        warn.textContent = "Informe um tempo válido (em segundos).";
+        return;
+      }
+
+      const count = Number($("teamCount").value);
+      const names = [
+        $("t1").value.trim(),
+        $("t2").value.trim(),
+        $("t3").value.trim(),
+        $("t4").value.trim(),
+      ];
+
+      const selected = names.slice(0, count).map((n, i) => n || `Equipe ${i+1}`);
+      const lower = selected.map(s => s.toLowerCase());
+      const hasDup = new Set(lower).size !== lower.length;
+      if (hasDup) {
+        warn.style.display = "block";
+        warn.textContent = "Evite nomes repetidos entre as equipes (pra não confundir no placar).";
+        return;
+      }
+
+      state.inGame = true;
+      state.durationSec = Math.floor(duration);
+      state.remaining = state.durationSec;
+      state.teams = selected.map(n => ({ name: n, score: 0 }));
+      state.roundIndex = 1;
+      state.phase = "normal";
+      state.history = [];
+      stopTimer();
+
+      $("setupCard").style.display = "none";
+      $("gameGrid").style.display = "grid";
+      $("btnNextRound").disabled = false;
       $("btnStartPause").disabled = false;
       $("btnResetTimer").disabled = false;
+
+      renderGame();
+    }
+
+    function fillDemo() {
+      $("roundSeconds").value = 15;
+      $("teamCount").value = 4;
+      $("t1").value = "Alpha";
+      $("t2").value = "Bravo";
+      $("t3").value = "Charlie";
+      $("t4").value = "Delta";
+    }
+
+    function resetAll() {
+      stopTimer();
+      $("roundSeconds").value = 15;
+      $("teamCount").value = 4;
+      ["t1","t2","t3","t4"].forEach(id => $(id).value = "");
+      $("setupWarn").style.display = "none";
+
+      Object.assign(state, {
+        inGame:false,
+        durationSec:15,
+        teams:[],
+        roundIndex:1,
+        phase:"setup",
+        history:[],
+        remaining:15,
+        timerId:null,
+        running:false
+      });
+
+      $("setupCard").style.display = "block";
+      $("gameGrid").style.display = "none";
+      $("smallStatus").textContent = "Configuração";
+    }
+
+    function restartGameKeepingTeams() {
+      stopTimer();
+      state.teams.forEach(t => t.score = 0);
+      state.phase = "normal";
+      state.roundIndex = 1;
+      state.remaining = state.durationSec;
+      state.history = [];
+      $("winnerBox").style.display = "none";
       $("btnNextRound").disabled = false;
-    }
-  }
-
-  // ---------- Setup ----------
-  function validateAndStart() {
-    const warn = $("setupWarn");
-    warn.style.display = "none";
-    warn.textContent = "";
-
-    const duration = Number($("roundSeconds").value);
-    if (!Number.isFinite(duration) || duration <= 0) {
-      warn.style.display = "block";
-      warn.textContent = "Informe um tempo válido (em segundos).";
-      return;
+      $("btnStartPause").disabled = false;
+      $("btnResetTimer").disabled = false;
+      renderGame();
     }
 
-    const count = Number($("teamCount").value);
-    const names = [
-      $("t1").value.trim(),
-      $("t2").value.trim(),
-      $("t3").value.trim(),
-      $("t4").value.trim(),
-    ];
+    function backToSetupPrefilled() {
+      const ok = confirm("Voltar para a configuração? (O jogo atual será interrompido)");
+      if (!ok) return;
 
-    const selected = names.slice(0, count).map((n, i) => n || `Equipe ${i+1}`);
-    // evita nomes repetidos (só pra não confundir)
-    const lower = selected.map(s => s.toLowerCase());
-    const hasDup = new Set(lower).size !== lower.length;
-    if (hasDup) {
-      warn.style.display = "block";
-      warn.textContent = "Evite nomes repetidos entre as equipes (pra não confundir no placar).";
-      return;
+      stopTimer();
+
+      $("roundSeconds").value = state.durationSec || 15;
+      $("teamCount").value = String(state.teams.length || 2);
+
+      const names = state.teams.map(t => t.name);
+      $("t1").value = names[0] || "";
+      $("t2").value = names[1] || "";
+      $("t3").value = names[2] || "";
+      $("t4").value = names[3] || "";
+
+      $("teamCount").dispatchEvent(new Event("change"));
+
+      state.inGame = false;
+      state.teams = [];
+      state.roundIndex = 1;
+      state.phase = "setup";
+      state.history = [];
+      state.remaining = Number($("roundSeconds").value) || 15;
+
+      $("setupCard").style.display = "block";
+      $("gameGrid").style.display = "none";
+      $("smallStatus").textContent = "Configuração";
+
+      $("btnNextRound").disabled = false;
+      $("btnStartPause").disabled = false;
+      $("btnResetTimer").disabled = false;
+      $("winnerBox").style.display = "none";
     }
 
-    // init state
-    state.inGame = true;
-    state.durationSec = Math.floor(duration);
-    state.remaining = state.durationSec;
-    state.teams = selected.map(n => ({ name: n, score: 0 }));
-    state.roundIndex = 1;
-    state.phase = "normal";
-    state.history = [];
-    stopTimer();
+    // ---------- Events ----------
+    $("startGame").onclick = validateAndStart;
+    $("loadDemo").onclick = fillDemo;
+    $("resetAll").onclick = resetAll;
 
-    // show game
-    $("setupCard").style.display = "none";
-    $("gameGrid").style.display = "grid";
-    $("btnNextRound").disabled = false;
-    $("btnStartPause").disabled = false;
-    $("btnResetTimer").disabled = false;
+    $("btnStartPause").onclick = () => toggleTimer();
+    $("btnResetTimer").onclick = () => { saveHistory(); resetTimer(); };
+    $("btnNextRound").onclick = () => nextRound();
+    $("btnUndoRound").onclick = () => restoreFromHistory();
+    $("btnRestart").onclick = () => restartGameKeepingTeams();
+    $("btnBackSetup").onclick = () => backToSetupPrefilled();
 
-    renderGame();
-  }
-
-  function fillDemo() {
-    $("roundSeconds").value = 15;
-    $("teamCount").value = 4;
-    $("t1").value = "Alpha";
-    $("t2").value = "Bravo";
-    $("t3").value = "Charlie";
-    $("t4").value = "Delta";
-  }
-
-  function resetAll() {
-    stopTimer();
-    // reset inputs
-    $("roundSeconds").value = 15;
-    $("teamCount").value = 4;
-    ["t1","t2","t3","t4"].forEach(id => $(id).value = "");
-    $("setupWarn").style.display = "none";
-
-    // reset state
-    Object.assign(state, {
-      inGame:false,
-      durationSec:15,
-      teams:[],
-      roundIndex:1,
-      phase:"setup",
-      history:[],
-      remaining:15,
-      timerId:null,
-      running:false
+    $("teamCount").addEventListener("change", () => {
+      const c = Number($("teamCount").value);
+      const inputs = [$("t1"),$("t2"),$("t3"),$("t4")];
+      inputs.forEach((inp, i) => {
+        inp.disabled = i >= c;
+        inp.style.opacity = i >= c ? .55 : 1;
+        if (i >= c) inp.value = "";
+      });
     });
+    $("teamCount").dispatchEvent(new Event("change"));
+  })();
+  </script>
 
-    // show setup
-    $("setupCard").style.display = "block";
-    $("gameGrid").style.display = "none";
-    $("smallStatus").textContent = "Configuração";
-  }
-
-  function restartGameKeepingTeams() {
-    stopTimer();
-    state.teams.forEach(t => t.score = 0);
-    state.phase = "normal";
-    state.roundIndex = 1;
-    state.remaining = state.durationSec;
-    state.history = [];
-    $("winnerBox").style.display = "none";
-    $("btnNextRound").disabled = false;
-    $("btnStartPause").disabled = false;
-    $("btnResetTimer").disabled = false;
-    renderGame();
-  }
-
-  // ---------- Events ----------
-  $("startGame").onclick = validateAndStart;
-  $("loadDemo").onclick = fillDemo;
-  $("resetAll").onclick = resetAll;
-
-  $("btnStartPause").onclick = () => toggleTimer();
-  $("btnResetTimer").onclick = () => { saveHistory(); resetTimer(); };
-  $("btnNextRound").onclick = () => nextRound();
-  $("btnUndoRound").onclick = () => restoreFromHistory();
-  $("btnRestart").onclick = () => restartGameKeepingTeams();
-  function backToSetupPrefilled() {
-  const ok = confirm("Voltar para a configuração? (O jogo atual será interrompido)");
-  if (!ok) return;
-
-  stopTimer();
-
-  $("roundSeconds").value = state.durationSec || 15;
-  $("teamCount").value = String(state.teams.length || 2);
-
-  const names = state.teams.map(t => t.name);
-  $("t1").value = names[0] || "";
-  $("t2").value = names[1] || "";
-  $("t3").value = names[2] || "";
-  $("t4").value = names[3] || "";
-
-  $("teamCount").dispatchEvent(new Event("change"));
-
-  state.inGame = false;
-  state.teams = [];
-  state.roundIndex = 1;
-  state.phase = "setup";
-  state.history = [];
-  state.remaining = Number($("roundSeconds").value) || 15;
-
-  $("setupCard").style.display = "block";
-  $("gameGrid").style.display = "none";
-  $("smallStatus").textContent = "Configuração";
-
-  $("btnNextRound").disabled = false;
-  $("btnStartPause").disabled = false;
-  $("btnResetTimer").disabled = false;
-  $("winnerBox").style.display = "none";
-}
-
-$("btnBackSetup").onclick = () => backToSetupPrefilled();
-
-  // ajusta campos de equipe conforme quantidade
-  $("teamCount").addEventListener("change", () => {
-    const c = Number($("teamCount").value);
-    const inputs = [$("t1"),$("t2"),$("t3"),$("t4")];
-    inputs.forEach((inp, i) => {
-      inp.disabled = i >= c;
-      inp.style.opacity = i >= c ? .55 : 1;
-      if (i >= c) inp.value = "";
-    });
-  });
-  $("teamCount").dispatchEvent(new Event("change"));
-
-})();
-</script>
+  <script>
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js");
+      });
+    }
+  </script>
 </body>
 </html>
