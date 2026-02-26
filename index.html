@@ -332,6 +332,7 @@
             <div class="hint">Use <b>+1</b> quando a equipe acertar.</div>
           </div>
           <div class="btnrow" style="margin:0;">
+            <button id="btnBackSetup">Configurar</button>
             <button class="bad" id="btnUndoRound">Voltar rodada</button>
             <button class="bad" id="btnRestart">Reiniciar jogo</button>
           </div>
@@ -728,6 +729,41 @@
   $("btnNextRound").onclick = () => nextRound();
   $("btnUndoRound").onclick = () => restoreFromHistory();
   $("btnRestart").onclick = () => restartGameKeepingTeams();
+  function backToSetupPrefilled() {
+  const ok = confirm("Voltar para a configuração? (O jogo atual será interrompido)");
+  if (!ok) return;
+
+  stopTimer();
+
+  $("roundSeconds").value = state.durationSec || 15;
+  $("teamCount").value = String(state.teams.length || 2);
+
+  const names = state.teams.map(t => t.name);
+  $("t1").value = names[0] || "";
+  $("t2").value = names[1] || "";
+  $("t3").value = names[2] || "";
+  $("t4").value = names[3] || "";
+
+  $("teamCount").dispatchEvent(new Event("change"));
+
+  state.inGame = false;
+  state.teams = [];
+  state.roundIndex = 1;
+  state.phase = "setup";
+  state.history = [];
+  state.remaining = Number($("roundSeconds").value) || 15;
+
+  $("setupCard").style.display = "block";
+  $("gameGrid").style.display = "none";
+  $("smallStatus").textContent = "Configuração";
+
+  $("btnNextRound").disabled = false;
+  $("btnStartPause").disabled = false;
+  $("btnResetTimer").disabled = false;
+  $("winnerBox").style.display = "none";
+}
+
+$("btnBackSetup").onclick = () => backToSetupPrefilled();
 
   // ajusta campos de equipe conforme quantidade
   $("teamCount").addEventListener("change", () => {
