@@ -265,6 +265,20 @@
       box-shadow: 0 12px 35px rgba(0,0,0,.35);
       z-index: 9999;
     }
+
+    /* Painel de desempate alternado */
+    .tiePanel{
+      display:none;
+      margin-top:12px;
+      background: rgba(255,122,24,.10);
+      border: 1px solid rgba(255,122,24,.25);
+      border-radius: 14px;
+      padding: 12px;
+    }
+    .tiePanelTitle{
+      font-weight:900;
+      margin-bottom:6px;
+    }
   </style>
 </head>
 
@@ -329,7 +343,7 @@
     <div class="grid" id="gameGrid" style="display:none;">
       <div class="card timerWrap">
         <div class="phase" id="phaseText">Rodada Normal</div>
-        <div class="round" id="roundText">Rodada 1 de 15</div>
+        <div class="round" id="roundText">Rodada 1 de 20</div>
 
         <div class="timer" id="timerText">00:15</div>
 
@@ -359,6 +373,22 @@
           </div>
         </div>
 
+        <!-- Painel desempate alternado -->
+        <div class="tiePanel" id="tiebreakPanel">
+          <div class="tiePanelTitle">Desempate alternado</div>
+          <div class="hint" style="margin-bottom:10px;">
+            Vez de: <b id="tiebreakTeamName">—</b>
+          </div>
+          <div class="btnrow" style="margin:0;">
+            <button class="bad" id="btnTieWrong">Errou (passa)</button>
+            <button class="good" id="btnTieRight">Acertou (vence)</button>
+            <button id="btnTieNewCard">Nova carta</button>
+          </div>
+          <div class="hint" style="margin-top:10px;">
+            Use uma carta aleatória. Se a equipe errar, passe para a próxima. Quem acertar primeiro vence.
+          </div>
+        </div>
+
         <div class="teams" id="teamsWrap" style="margin-top:12px;"></div>
 
         <div class="footerRow">
@@ -367,8 +397,8 @@
         </div>
 
         <div class="hint" style="margin-top:10px;">
-          Obs.: se terminar empatado em 1º após a 15ª rodada, entram 5 rodadas de desempate.
-          Se ainda empatar, vira <b>morte súbita</b> até existir 1 vencedor.
+          Obs.: se terminar empatado em 1º após a 20ª rodada, inicia o <b>desempate alternado</b>.
+          A vez roda entre as equipes empatadas até alguém acertar.
         </div>
       </div>
     </div>
@@ -381,12 +411,16 @@
       inGame: false,
       durationSec: 15,
       teams: [], // {name, score}
+
       // rounds:
-      normalRounds: 15,
-      tiebreakMax: 5,         // "mais 5 rodadas"
+      normalRounds: 20,
       roundIndex: 1,          // 1-based within current phase
-      phase: "setup",         // setup | normal | tiebreak | sudden
-      history: [],            // snapshots for undo
+      phase: "setup",         // setup | normal | tiebreak_alt
+      tieTeamsIdx: [],        // índices das equipes empatadas em 1º
+      tieTurnPos: 0,          // posição (vez) dentro do tieTeamsIdx
+
+      history: [],
+
       // timer:
       remaining: 15,
       timerId: null,
@@ -411,20 +445,17 @@
       return { max, leaders };
     }
 
-    function uniqueWinnerExists() {
-      const { leaders } = topLeaders();
-      return leaders.length === 1;
-    }
-
     function saveHistory() {
       state.history.push(JSON.parse(JSON.stringify({
         teams: state.teams,
         roundIndex: state.roundIndex,
         phase: state.phase,
         remaining: state.remaining,
-        running: state.running
+        running: state.running,
+        tieTeamsIdx: state.tieTeamsIdx,
+        tieTurnPos: state.tieTurnPos
       })));
-      if (state.history.length > 50) state.history.shift();
+      if (state.history.length > 60) state.history.shift();
     }
 
     function restoreFromHistory() {
@@ -435,6 +466,8 @@
       state.phase = snap.phase;
       state.remaining = snap.remaining;
       state.running = false;
+      state.tieTeamsIdx = snap.tieTeamsIdx || [];
+      state.tieTurnPos = snap.tieTurnPos || 0;
       stopTimer();
       renderGame();
     }
@@ -476,15 +509,17 @@
     // ---------- Game flow ----------
     function currentPhaseLabel() {
       if (state.phase === "normal") return "Rodada Normal";
-      if (state.phase === "tiebreak") return "Desempate (até 5 rodadas)";
-      if (state.phase === "sudden") return "Morte súbita (até ter 1 vencedor)";
+      if (state.phase === "tiebreak_alt") return "Desempate Alternado";
       return "Configuração";
     }
 
     function roundText() {
       if (state.phase === "normal") return `Rodada ${state.roundIndex} de ${state.normalRounds}`;
-      if (state.phase === "tiebreak") return `Desempate ${state.roundIndex} de ${state.tiebreakMax}`;
-      if (state.phase === "sudden") return `Morte súbita ${state.roundIndex}`;
+      if (state.phase === "tiebreak_alt") {
+        const idx = state.tieTeamsIdx[state.tieTurnPos];
+        const name = (idx !== undefined && state.teams[idx]) ? state.teams[idx].name : "—";
+        return `Desempate • Vez: ${name}`;
+      }
       return "";
     }
 
@@ -492,32 +527,21 @@
       $("winnerBox").style.display = "none";
       $("winnerBox").innerHTML = "";
 
+      // fim das rodadas normais
       if (state.phase === "normal" && state.roundIndex > state.normalRounds) {
         const { leaders } = topLeaders();
-        if (leaders.length === 1) finishGame(leaders[0]);
-        else {
-          state.phase = "tiebreak";
-          state.roundIndex = 1;
-          resetTimer();
-        }
-      }
 
-      if (state.phase === "tiebreak" && state.roundIndex > state.tiebreakMax) {
-        if (uniqueWinnerExists()) {
-          const { leaders } = topLeaders();
+        // vencedor direto
+        if (leaders.length === 1) {
           finishGame(leaders[0]);
-        } else {
-          state.phase = "sudden";
-          state.roundIndex = 1;
-          resetTimer();
+          return;
         }
-      }
 
-      if (state.phase === "sudden") {
-        if (uniqueWinnerExists()) {
-          const { leaders } = topLeaders();
-          finishGame(leaders[0]);
-        }
+        // empate em 1º -> desempate alternado
+        state.phase = "tiebreak_alt";
+        state.tieTeamsIdx = leaders.map(l => l.idx);
+        state.tieTurnPos = 0;
+        resetTimer();
       }
 
       renderGame();
@@ -537,6 +561,9 @@
       $("btnNextRound").disabled = true;
       $("btnStartPause").disabled = true;
       $("btnResetTimer").disabled = true;
+      // trava botões do desempate
+      const panel = $("tiebreakPanel");
+      if (panel) panel.style.display = "none";
     }
 
     function nextRound() {
@@ -552,7 +579,6 @@
       saveHistory();
       state.teams[idx].score = Math.max(0, state.teams[idx].score + delta);
       renderGame();
-      if (state.phase === "sudden") checkEndConditionsAndMaybeFinish();
     }
 
     function escapeHtml(s){
@@ -567,6 +593,24 @@
     // ---------- Render ----------
     function renderTimerOnly() {
       $("timerText").textContent = fmtTime(state.remaining);
+    }
+
+    function renderTiebreakPanel() {
+      const panel = $("tiebreakPanel");
+      if (!panel) return;
+
+      if (state.phase !== "tiebreak_alt") {
+        panel.style.display = "none";
+        return;
+      }
+
+      panel.style.display = "block";
+      const teamIdx = state.tieTeamsIdx[state.tieTurnPos];
+      const name = (teamIdx !== undefined && state.teams[teamIdx]) ? state.teams[teamIdx].name : "—";
+      $("tiebreakTeamName").textContent = name;
+
+      // status
+      $("tieStatus").textContent = "Desempate alternado ativo.";
     }
 
     function renderTeams() {
@@ -597,9 +641,6 @@
       });
 
       if (state.phase === "normal") $("tieStatus").textContent = "";
-      else if (state.phase === "tiebreak") $("tieStatus").textContent = "Modo desempate ativo.";
-      else if (state.phase === "sudden") $("tieStatus").textContent = "Morte súbita: o jogo termina quando houver 1 líder único.";
-
       if (leaders.length === 1) $("leaderStatus").textContent = `Líder: ${leaderNames[0]} (${max})`;
       else $("leaderStatus").textContent = `Empate na liderança: ${leaderNames.join(", ")} (${max})`;
     }
@@ -610,6 +651,7 @@
       $("roundText").textContent = roundText();
       renderTimerOnly();
       renderTeams();
+      renderTiebreakPanel();
 
       const finished = $("btnNextRound").disabled;
       if (!finished) {
@@ -655,6 +697,8 @@
       state.teams = selected.map(n => ({ name: n, score: 0 }));
       state.roundIndex = 1;
       state.phase = "normal";
+      state.tieTeamsIdx = [];
+      state.tieTurnPos = 0;
       state.history = [];
       stopTimer();
 
@@ -689,6 +733,8 @@
         teams:[],
         roundIndex:1,
         phase:"setup",
+        tieTeamsIdx:[],
+        tieTurnPos:0,
         history:[],
         remaining:15,
         timerId:null,
@@ -706,6 +752,8 @@
       state.phase = "normal";
       state.roundIndex = 1;
       state.remaining = state.durationSec;
+      state.tieTeamsIdx = [];
+      state.tieTurnPos = 0;
       state.history = [];
       $("winnerBox").style.display = "none";
       $("btnNextRound").disabled = false;
@@ -735,6 +783,8 @@
       state.teams = [];
       state.roundIndex = 1;
       state.phase = "setup";
+      state.tieTeamsIdx = [];
+      state.tieTurnPos = 0;
       state.history = [];
       state.remaining = Number($("roundSeconds").value) || 15;
 
@@ -759,6 +809,34 @@
     $("btnUndoRound").onclick = () => restoreFromHistory();
     $("btnRestart").onclick = () => restartGameKeepingTeams();
     $("btnBackSetup").onclick = () => backToSetupPrefilled();
+
+    // Desempate alternado
+    $("btnTieWrong").onclick = () => {
+      if (state.phase !== "tiebreak_alt") return;
+      saveHistory();
+      state.tieTurnPos = (state.tieTurnPos + 1) % state.tieTeamsIdx.length;
+      renderGame();
+    };
+
+    $("btnTieNewCard").onclick = () => {
+      if (state.phase !== "tiebreak_alt") return;
+      saveHistory();
+      state.tieTurnPos = 0;
+      resetTimer();
+      renderGame();
+    };
+
+    $("btnTieRight").onclick = () => {
+      if (state.phase !== "tiebreak_alt") return;
+      saveHistory();
+      const winnerIdx = state.tieTeamsIdx[state.tieTurnPos];
+      if (winnerIdx === undefined) return;
+
+      // opcional: registra +1 no placar no momento do desempate
+      state.teams[winnerIdx].score += 1;
+
+      finishGame(state.teams[winnerIdx]);
+    };
 
     $("teamCount").addEventListener("change", () => {
       const c = Number($("teamCount").value);
