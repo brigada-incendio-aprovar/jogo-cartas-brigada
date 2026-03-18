@@ -169,7 +169,7 @@
       transition: transform 180ms ease;
     }
 
-    /* Cronômetro virando bomba no 0 */
+    /* Cronômetro: bomba/explosão no 0 (no lugar do tempo) */
     .timer.timerBoom{
       letter-spacing:0;
       transform: scale(1.05);
@@ -268,7 +268,7 @@
     .cornerLogo{
       position: fixed;
       top: 14px;
-      left: 14px; /* se quiser no canto direito: troque por right:14px e apague left */
+      left: 14px;
       width: 56px;
       height: 56px;
       object-fit: contain;
@@ -292,50 +292,6 @@
     .tiePanelTitle{
       font-weight:900;
       margin-bottom:6px;
-    }
-
-    /* (Mantido) Overlay de explosão - opcional */
-    .boomOverlay{
-      position: fixed;
-      inset: 0;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      z-index: 10000;
-      pointer-events: none;
-      background: radial-gradient(circle at center, rgba(255,122,24,.18), rgba(0,0,0,.65));
-    }
-    .boomOverlay.show{
-      display: flex;
-      animation: boomFade 900ms ease-out forwards;
-    }
-    .boomCircle{
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: rgba(255,122,24,.9);
-      box-shadow: 0 0 30px rgba(255,122,24,.9);
-      animation: boomExpand 650ms ease-out forwards;
-    }
-    .boomText{
-      position: absolute;
-      font-size: 84px;
-      transform: scale(.6);
-      animation: boomPop 650ms ease-out forwards;
-      filter: drop-shadow(0 18px 28px rgba(0,0,0,.45));
-    }
-    @keyframes boomExpand{
-      0%   { transform: scale(1);   opacity: 1; }
-      100% { transform: scale(75);  opacity: 0; }
-    }
-    @keyframes boomPop{
-      0%   { transform: scale(.3); opacity: 0; }
-      30%  { transform: scale(1.1); opacity: 1; }
-      100% { transform: scale(1.0); opacity: 0; }
-    }
-    @keyframes boomFade{
-      0%   { opacity: 1; }
-      100% { opacity: 0; }
     }
   </style>
 </head>
@@ -463,12 +419,6 @@
     </div>
   </div>
 
-  <!-- Overlay de explosão (opcional, mantido) -->
-  <div id="boomOverlay" class="boomOverlay" aria-hidden="true">
-    <div class="boomCircle"></div>
-    <div class="boomText">💥</div>
-  </div>
-
   <script>
   (() => {
     // ---------- State ----------
@@ -549,7 +499,7 @@
     }
 
     // ==========================================
-    // SONS (WebAudio): bip + explosão
+    // SONS (WebAudio): bip + explosão (BUUMM)
     // ==========================================
     let audioCtx = null;
     let lastBeepSecond = null;
@@ -631,26 +581,30 @@
       o.stop(t + 0.5);
     }
 
-    function showExplosionVisual() {
-      const el = document.getElementById("boomOverlay");
-      if (!el) return;
-      el.classList.remove("show");
-      void el.offsetWidth; // reflow
-      el.classList.add("show");
-      setTimeout(() => el.classList.remove("show"), 950);
-    }
-
     // ==========================================
-    // TIMER: “bomba no lugar do tempo”
+    // TIMER: “bomba explodindo” no lugar do tempo
     // ==========================================
     let timerBoomActive = false;
+    let boomTimeout1 = null;
 
     function showTimerBoom() {
       timerBoomActive = true;
       const el = $("timerText");
       if (!el) return;
+
+      // reinicia a animação
+      el.classList.remove("timerBoom");
+      void el.offsetWidth;
+
       el.classList.add("timerBoom");
-      el.textContent = "💣💥";
+
+      // sequência: 💣 (bem rápido) -> 💥 (explodiu)
+      el.textContent = "💣";
+      clearTimeout(boomTimeout1);
+      boomTimeout1 = setTimeout(() => {
+        if (!timerBoomActive) return;
+        el.textContent = "💥";
+      }, 180);
     }
 
     function hideTimerBoom() {
@@ -658,6 +612,7 @@
       const el = $("timerText");
       if (!el) return;
       el.classList.remove("timerBoom");
+      clearTimeout(boomTimeout1);
     }
 
     // ---------- Timer ----------
@@ -693,11 +648,9 @@
 
           if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
 
-          // explosão: som + visual
+          // explosão: BUUMM + bomba no lugar do tempo
           playExplosion();
           showTimerBoom();
-          // opcional: mantém overlay (você pode remover se quiser)
-          showExplosionVisual();
 
           lastBeepSecond = null;
         }
