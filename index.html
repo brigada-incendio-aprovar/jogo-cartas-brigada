@@ -166,7 +166,21 @@
       font-weight:800;
       letter-spacing:1px;
       margin: 6px 0 2px;
+      transition: transform 180ms ease;
     }
+
+    /* Cronômetro virando bomba no 0 */
+    .timer.timerBoom{
+      letter-spacing:0;
+      transform: scale(1.05);
+      animation: timerBoomPop 700ms ease-out forwards;
+    }
+    @keyframes timerBoomPop{
+      0%   { transform: scale(.6); opacity: 0; }
+      30%  { transform: scale(1.15); opacity: 1; }
+      100% { transform: scale(1.0); opacity: 1; }
+    }
+
     .hint{
       font-size:13px;
       color:var(--muted);
@@ -280,9 +294,7 @@
       margin-bottom:6px;
     }
 
-    /* ============================
-       EXPLOSÃO (VISUAL)
-       ============================ */
+    /* (Mantido) Overlay de explosão - opcional */
     .boomOverlay{
       position: fixed;
       inset: 0;
@@ -397,6 +409,7 @@
           <button class="primary" id="btnStartPause">Iniciar</button>
           <button id="btnResetTimer">Reiniciar tempo</button>
           <button class="good" id="btnNextRound">Próxima rodada</button>
+          <button id="btnSoundToggle">Som: ON</button>
         </div>
 
         <div class="hint" id="timerHint">
@@ -450,7 +463,7 @@
     </div>
   </div>
 
-  <!-- Overlay de explosão -->
+  <!-- Overlay de explosão (opcional, mantido) -->
   <div id="boomOverlay" class="boomOverlay" aria-hidden="true">
     <div class="boomCircle"></div>
     <div class="boomText">💥</div>
@@ -525,6 +538,17 @@
     }
 
     // ==========================================
+    // SOM ON/OFF (persistente)
+    // ==========================================
+    let soundEnabled = (localStorage.getItem("soundEnabled") ?? "1") === "1";
+
+    function updateSoundButton() {
+      const btn = document.getElementById("btnSoundToggle");
+      if (!btn) return;
+      btn.textContent = soundEnabled ? "Som: ON" : "Som: OFF";
+    }
+
+    // ==========================================
     // SONS (WebAudio): bip + explosão
     // ==========================================
     let audioCtx = null;
@@ -537,6 +561,8 @@
     }
 
     function playBeep() {
+      if (!soundEnabled) return;
+
       const ctx = getAudioCtx();
       const o = ctx.createOscillator();
       const g = ctx.createGain();
@@ -558,6 +584,8 @@
     }
 
     function playExplosion() {
+      if (!soundEnabled) return;
+
       const ctx = getAudioCtx();
 
       const bufferSize = Math.floor(ctx.sampleRate * 0.6);
@@ -612,6 +640,26 @@
       setTimeout(() => el.classList.remove("show"), 950);
     }
 
+    // ==========================================
+    // TIMER: “bomba no lugar do tempo”
+    // ==========================================
+    let timerBoomActive = false;
+
+    function showTimerBoom() {
+      timerBoomActive = true;
+      const el = $("timerText");
+      if (!el) return;
+      el.classList.add("timerBoom");
+      el.textContent = "💣💥";
+    }
+
+    function hideTimerBoom() {
+      timerBoomActive = false;
+      const el = $("timerText");
+      if (!el) return;
+      el.classList.remove("timerBoom");
+    }
+
     // ---------- Timer ----------
     function stopTimer() {
       if (state.timerId) clearInterval(state.timerId);
@@ -623,8 +671,8 @@
     function startTimer() {
       if (state.running) return;
 
-      // garante que o AudioContext “acorde” após gesto do usuário
-      getAudioCtx();
+      // acorda o AudioContext (somente se som estiver ON)
+      if (soundEnabled) getAudioCtx();
 
       state.running = true;
       $("btnStartPause").textContent = "Pausar";
@@ -644,7 +692,11 @@
           stopTimer();
 
           if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
+
+          // explosão: som + visual
           playExplosion();
+          showTimerBoom();
+          // opcional: mantém overlay (você pode remover se quiser)
           showExplosionVisual();
 
           lastBeepSecond = null;
@@ -662,7 +714,8 @@
     function resetTimer() {
       stopTimer();
       state.remaining = state.durationSec;
-      lastBeepSecond = null; // reseta bips
+      lastBeepSecond = null;
+      hideTimerBoom();
       renderTimerOnly();
     }
 
@@ -727,6 +780,7 @@
       stopTimer();
       state.remaining = state.durationSec;
       lastBeepSecond = null;
+      hideTimerBoom();
       state.roundIndex += 1;
       checkEndConditionsAndMaybeFinish();
     }
@@ -748,6 +802,8 @@
 
     // ---------- Render ----------
     function renderTimerOnly() {
+      // se a bomba estiver ativa, não sobrescreve com "00:00"
+      if (timerBoomActive) return;
       $("timerText").textContent = fmtTime(state.remaining);
     }
 
@@ -807,6 +863,7 @@
       renderTimerOnly();
       renderTeams();
       renderTiebreakPanel();
+      updateSoundButton();
 
       const finished = $("btnNextRound").disabled;
       if (!finished) {
@@ -850,6 +907,7 @@
       state.durationSec = Math.floor(duration);
       state.remaining = state.durationSec;
       lastBeepSecond = null;
+      hideTimerBoom();
 
       state.teams = selected.map(n => ({ name: n, score: 0 }));
       state.roundIndex = 1;
@@ -899,6 +957,7 @@
       });
 
       lastBeepSecond = null;
+      hideTimerBoom();
 
       $("setupCard").style.display = "block";
       $("gameGrid").style.display = "none";
@@ -915,6 +974,7 @@
       state.tieTurnPos = 0;
       state.history = [];
       lastBeepSecond = null;
+      hideTimerBoom();
 
       $("winnerBox").style.display = "none";
       $("btnNextRound").disabled = false;
@@ -929,6 +989,7 @@
 
       stopTimer();
       lastBeepSecond = null;
+      hideTimerBoom();
 
       $("roundSeconds").value = state.durationSec || 15;
       $("teamCount").value = String(state.teams.length || 2);
@@ -972,6 +1033,16 @@
     $("btnRestart").onclick = () => restartGameKeepingTeams();
     $("btnBackSetup").onclick = () => backToSetupPrefilled();
 
+    // Som ON/OFF
+    $("btnSoundToggle").onclick = () => {
+      soundEnabled = !soundEnabled;
+      localStorage.setItem("soundEnabled", soundEnabled ? "1" : "0");
+      updateSoundButton();
+      if (soundEnabled) {
+        try { getAudioCtx(); } catch(e) {}
+      }
+    };
+
     // Desempate alternado
     $("btnTieWrong").onclick = () => {
       if (state.phase !== "tiebreak_alt") return;
@@ -1006,7 +1077,9 @@
         if (i >= c) inp.value = "";
       });
     });
+
     $("teamCount").dispatchEvent(new Event("change"));
+    updateSoundButton();
   })();
   </script>
 
