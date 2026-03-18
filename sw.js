@@ -1,4 +1,4 @@
-const CACHE_NAME = "brigada-cartas-v4";
+const CACHE_NAME = "brigada-cartas-v5";
 const ASSETS = [
   "./",
   "./index.html",
