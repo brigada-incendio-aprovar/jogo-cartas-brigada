@@ -279,6 +279,52 @@
       font-weight:900;
       margin-bottom:6px;
     }
+
+    /* ============================
+       EXPLOSÃO (VISUAL)
+       ============================ */
+    .boomOverlay{
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      pointer-events: none;
+      background: radial-gradient(circle at center, rgba(255,122,24,.18), rgba(0,0,0,.65));
+    }
+    .boomOverlay.show{
+      display: flex;
+      animation: boomFade 900ms ease-out forwards;
+    }
+    .boomCircle{
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255,122,24,.9);
+      box-shadow: 0 0 30px rgba(255,122,24,.9);
+      animation: boomExpand 650ms ease-out forwards;
+    }
+    .boomText{
+      position: absolute;
+      font-size: 84px;
+      transform: scale(.6);
+      animation: boomPop 650ms ease-out forwards;
+      filter: drop-shadow(0 18px 28px rgba(0,0,0,.45));
+    }
+    @keyframes boomExpand{
+      0%   { transform: scale(1);   opacity: 1; }
+      100% { transform: scale(75);  opacity: 0; }
+    }
+    @keyframes boomPop{
+      0%   { transform: scale(.3); opacity: 0; }
+      30%  { transform: scale(1.1); opacity: 1; }
+      100% { transform: scale(1.0); opacity: 0; }
+    }
+    @keyframes boomFade{
+      0%   { opacity: 1; }
+      100% { opacity: 0; }
+    }
   </style>
 </head>
 
@@ -404,6 +450,12 @@
     </div>
   </div>
 
+  <!-- Overlay de explosão -->
+  <div id="boomOverlay" class="boomOverlay" aria-hidden="true">
+    <div class="boomCircle"></div>
+    <div class="boomText">💥</div>
+  </div>
+
   <script>
   (() => {
     // ---------- State ----------
@@ -472,6 +524,94 @@
       renderGame();
     }
 
+    // ==========================================
+    // SONS (WebAudio): bip + explosão
+    // ==========================================
+    let audioCtx = null;
+    let lastBeepSecond = null;
+
+    function getAudioCtx() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      if (audioCtx.state === "suspended") audioCtx.resume();
+      return audioCtx;
+    }
+
+    function playBeep() {
+      const ctx = getAudioCtx();
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+
+      o.type = "square";
+      o.frequency.value = 1100;
+      g.gain.value = 0.0001;
+
+      o.connect(g);
+      g.connect(ctx.destination);
+
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.12, t + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.13);
+
+      o.start(t);
+      o.stop(t + 0.15);
+    }
+
+    function playExplosion() {
+      const ctx = getAudioCtx();
+
+      const bufferSize = Math.floor(ctx.sampleRate * 0.6);
+      const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        const decay = 1 - i / bufferSize;
+        data[i] = (Math.random() * 2 - 1) * decay;
+      }
+      const noise = ctx.createBufferSource();
+      noise.buffer = buffer;
+
+      const filter = ctx.createBiquadFilter();
+      filter.type = "lowpass";
+      filter.frequency.value = 220;
+
+      const g = ctx.createGain();
+      g.gain.value = 0.0001;
+
+      noise.connect(filter);
+      filter.connect(g);
+      g.connect(ctx.destination);
+
+      const t = ctx.currentTime;
+      g.gain.setValueAtTime(0.35, t);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 0.55);
+
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = "sine";
+      o.frequency.setValueAtTime(90, t);
+      o.frequency.exponentialRampToValueAtTime(40, t + 0.4);
+
+      og.gain.setValueAtTime(0.22, t);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.45);
+
+      o.connect(og);
+      og.connect(ctx.destination);
+
+      noise.start(t);
+      o.start(t);
+      noise.stop(t + 0.6);
+      o.stop(t + 0.5);
+    }
+
+    function showExplosionVisual() {
+      const el = document.getElementById("boomOverlay");
+      if (!el) return;
+      el.classList.remove("show");
+      void el.offsetWidth; // reflow
+      el.classList.add("show");
+      setTimeout(() => el.classList.remove("show"), 950);
+    }
+
     // ---------- Timer ----------
     function stopTimer() {
       if (state.timerId) clearInterval(state.timerId);
@@ -482,15 +622,34 @@
 
     function startTimer() {
       if (state.running) return;
+
+      // garante que o AudioContext “acorde” após gesto do usuário
+      getAudioCtx();
+
       state.running = true;
       $("btnStartPause").textContent = "Pausar";
       state.timerId = setInterval(() => {
         state.remaining -= 1;
+
+        // bips nos últimos 5 segundos (5..1)
+        if (state.remaining <= 5 && state.remaining >= 1) {
+          if (lastBeepSecond !== state.remaining) {
+            lastBeepSecond = state.remaining;
+            playBeep();
+          }
+        }
+
         if (state.remaining <= 0) {
           state.remaining = 0;
           stopTimer();
-          if (navigator.vibrate) navigator.vibrate([120, 60, 120]);
+
+          if (navigator.vibrate) navigator.vibrate([200, 80, 200]);
+          playExplosion();
+          showExplosionVisual();
+
+          lastBeepSecond = null;
         }
+
         renderTimerOnly();
       }, 1000);
     }
@@ -503,6 +662,7 @@
     function resetTimer() {
       stopTimer();
       state.remaining = state.durationSec;
+      lastBeepSecond = null; // reseta bips
       renderTimerOnly();
     }
 
@@ -527,17 +687,12 @@
       $("winnerBox").style.display = "none";
       $("winnerBox").innerHTML = "";
 
-      // fim das rodadas normais
       if (state.phase === "normal" && state.roundIndex > state.normalRounds) {
         const { leaders } = topLeaders();
-
-        // vencedor direto
         if (leaders.length === 1) {
           finishGame(leaders[0]);
           return;
         }
-
-        // empate em 1º -> desempate alternado
         state.phase = "tiebreak_alt";
         state.tieTeamsIdx = leaders.map(l => l.idx);
         state.tieTurnPos = 0;
@@ -561,7 +716,7 @@
       $("btnNextRound").disabled = true;
       $("btnStartPause").disabled = true;
       $("btnResetTimer").disabled = true;
-      // trava botões do desempate
+
       const panel = $("tiebreakPanel");
       if (panel) panel.style.display = "none";
     }
@@ -571,6 +726,7 @@
       saveHistory();
       stopTimer();
       state.remaining = state.durationSec;
+      lastBeepSecond = null;
       state.roundIndex += 1;
       checkEndConditionsAndMaybeFinish();
     }
@@ -609,7 +765,6 @@
       const name = (teamIdx !== undefined && state.teams[teamIdx]) ? state.teams[teamIdx].name : "—";
       $("tiebreakTeamName").textContent = name;
 
-      // status
       $("tieStatus").textContent = "Desempate alternado ativo.";
     }
 
@@ -694,6 +849,8 @@
       state.inGame = true;
       state.durationSec = Math.floor(duration);
       state.remaining = state.durationSec;
+      lastBeepSecond = null;
+
       state.teams = selected.map(n => ({ name: n, score: 0 }));
       state.roundIndex = 1;
       state.phase = "normal";
@@ -741,6 +898,8 @@
         running:false
       });
 
+      lastBeepSecond = null;
+
       $("setupCard").style.display = "block";
       $("gameGrid").style.display = "none";
       $("smallStatus").textContent = "Configuração";
@@ -755,6 +914,8 @@
       state.tieTeamsIdx = [];
       state.tieTurnPos = 0;
       state.history = [];
+      lastBeepSecond = null;
+
       $("winnerBox").style.display = "none";
       $("btnNextRound").disabled = false;
       $("btnStartPause").disabled = false;
@@ -767,6 +928,7 @@
       if (!ok) return;
 
       stopTimer();
+      lastBeepSecond = null;
 
       $("roundSeconds").value = state.durationSec || 15;
       $("teamCount").value = String(state.teams.length || 2);
@@ -831,10 +993,7 @@
       saveHistory();
       const winnerIdx = state.tieTeamsIdx[state.tieTurnPos];
       if (winnerIdx === undefined) return;
-
-      // opcional: registra +1 no placar no momento do desempate
       state.teams[winnerIdx].score += 1;
-
       finishGame(state.teams[winnerIdx]);
     };
 
